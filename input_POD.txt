@@ -1,8 +1,8 @@
 ProjectName
 ToyData
 NumSS
-5
+100
 NumModes
-2
+10
 GPU
 0

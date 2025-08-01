@@ -3,6 +3,6 @@ ToyData
 NumSS
 5
 NumModes
-5
+2
 GPU
 0

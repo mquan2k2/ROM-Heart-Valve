@@ -1,2 +1,8 @@
-poop
-
+ProjectName
+Vortex_Avg
+NumSS
+151
+NumModes
+4
+GPU
+0

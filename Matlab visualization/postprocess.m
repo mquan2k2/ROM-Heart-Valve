@@ -1,46 +1,56 @@
 n = 7004448;
+times = [10, 15, 20, 25];
 folder = 'C:\Users\28027\Desktop\Flow_Field\FlowField0.5\snapshots\';
-c = readmatrix(fullfile(folder,'coords.txt'));                 % [n×3], columns: x y z
-Vfield = readmatrix(fullfile(folder,'Valve_0.5mm_Snapshot_0015.txt'));
 
-vx = Vfield(1:n,1);
-vy = Vfield(n+1:2*n,1);
-vz = Vfield(2*n+1:3*n,1);
+for k = 1:numel(times)
+    t = times(k);
 
 
-x = unique(c(:,1));  nx = numel(x);
-y = unique(c(:,2));  ny = numel(y);
-z = unique(c(:,3));  nz = numel(z);
+    figure('Name',sprintf('Snapshot %d',t),'NumberTitle','off');
 
-[~,ix] = ismember(c(:,1), x);
-[~,iy] = ismember(c(:,2), y);
-[~,iz] = ismember(c(:,3), z);
+    c = readmatrix(fullfile(folder, 'coords.txt'));
+    fname = sprintf('Valve_0.5mm_Snapshot_%04d.txt', t);
+    Vfield = readmatrix(fullfile(folder, fname));
 
-lin = sub2ind([ny,nx,nz], iy, ix, iz);
+    vx = Vfield(1:n,1);
+    vy = Vfield(n+1:2*n,1);
+    vz = Vfield(2*n+1:3*n,1);
 
-Vx = nan(ny,nx,nz); Vy = Vx; Vz = Vx;
-Vx(lin) = vx;
-Vy(lin) = vy;
-Vz(lin) = vz;
+    x = unique(c(:,1));  nx = numel(x);
+    y = unique(c(:,2));  ny = numel(y);
+    z = unique(c(:,3));  nz = numel(z);
 
-[X,Y,Z] = meshgrid(x, y, z);
+    [~,ix] = ismember(c(:,1), x);
+    [~,iy] = ismember(c(:,2), y);
+    [~,iz] = ismember(c(:,3), z);
+    lin = sub2ind([ny,nx,nz], iy, ix, iz);
 
-[curlx, curly, curlz, cav] = curl(X, Y, Z, Vx, Vy, Vz);
+    Vx = nan(ny,nx,nz); Vy = Vx; Vz = Vx;
+    Vx(lin) = vx; Vy(lin) = vy; Vz(lin) = vz;
 
-sum = sqrt(curlx.^2+curly.^2+curlz.^2);
-omegaMag = curlx;
-contourNum = 1.8;
+    [X,Y,Z] = meshgrid(x, y, z);
+    [curlx, curly, curlz, ~] = curl(X, Y, Z, Vx, Vy, Vz);
 
-p = patch(isosurface(X, Y, Z, omegaMag, contourNum));
-isonormals(X, Y, Z, omegaMag, p)
-p.FaceColor = 'red';
-p.EdgeColor = 'none';
-hold on;
 
-q = patch(isosurface(X, Y, Z, omegaMag, -contourNum));
-isonormals(X, Y, Z, omegaMag, p)
-q.FaceColor = 'blue';
-q.EdgeColor = 'none';
+    omegaMag = curlx;
+    isoLevel = 1.8;
 
-daspect([1 1 1])
-camlight; lighting gouraud
+    hold on;
+
+    p = patch(isosurface(X, Y, Z, omegaMag,  isoLevel));
+    isonormals(X, Y, Z, omegaMag, p);
+    set(p, 'FaceColor','red','EdgeColor','none');
+
+    q = patch(isosurface(X, Y, Z, omegaMag, -isoLevel));
+    isonormals(X, Y, Z, omegaMag, q);
+    set(q, 'FaceColor','blue','EdgeColor','none');
+
+    daspect([1 1 1]); box on; axis vis3d;
+    camlight headlight; lighting gouraud;
+
+    axis([-1 9 -1.5 1.5 -1.5 1.5]);
+    view(315, 20);
+    title(sprintf('Snapshot %d', t));
+
+    hold off;
+end

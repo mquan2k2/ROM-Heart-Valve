@@ -1,8 +1,8 @@
 ProjectName
-ToyData
+Valve_0.5mm_Avg
 NumSS
 100
 NumModes
-10
+5
 GPU
 0

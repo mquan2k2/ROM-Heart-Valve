@@ -28,6 +28,7 @@ for k = 1:numel(times)
     t = times(k);
 
     fname = sprintf('Valve_0.5mm_Snapshot_%04d.txt', t);
+    %fname = sprintf( 'Valve_0.5mm_Avg_Mode_1.txt' );
     Vfield = readmatrix(fullfile(folder, fname));
 
     vx = Vfield(1:n,1);

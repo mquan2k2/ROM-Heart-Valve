@@ -22,7 +22,7 @@ for g = 1:100
     M_unique = sortrows(M_unique,[1 2 3]);
     snapshot = [M_unique(:,4);M_unique(:,5);M_unique(:,6)];
 
-    idstr = sprintf('%04d', g);
+    idstr = sprintf('%d', g);
     outFile = fullfile('C:\Users\28027\Desktop\Flow_Field\FlowField0.5\snapshots', ...
                    ['Valve_0.5mm_Snapshot_' idstr '.txt']);
     writematrix(snapshot, outFile);

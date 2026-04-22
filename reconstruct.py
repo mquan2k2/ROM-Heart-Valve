@@ -1,195 +1,130 @@
-import os
 import numpy as np
+import os
 
+# =========================================================
+# Fill in your file paths here
+# =========================================================
+valves = [0.3, 0.5, 0.75]
+n_modes = 5   # 和你reconstruct时一致
 
-def reconstruct_pod_flowfields(projectNames, n):
-    """
-    Reconstruct flowfields using POD modes 1..n for one or more projects.
+for v in valves:
+    projectName = f"Valve_{v}mm"
 
-    Parameters
-    ----------
-    projectNames : list[str]
-        List of project name prefixes.
-    n : int
-        Number of POD modes to use in the reconstruction.
+    coords_file = "C:/Users/28027/Desktop/Flow_Field/FlowField0.5/snapshots_POD/coords.txt"
 
-    Notes
-    -----
-    Assumes:
-    - Spatial POD modes are stored as:
-          {projectName}_podMode_{i}.txt
-    - Temporal POD modes (rows of V^T) are stored as:
-          {projectName}_podTempMode_{i}.txt
-    - Singular values are stored as:
-          {projectName}_SV.txt
+    for j in range(1, 100):
+        velocity_file = f"C:/Users/28027/Desktop/Flow_Field/Reconstruct/Reconstructed/{projectName}_reconFlowfield_{n_modes}_modes_{j}.npy"
+        
+        # 👉 输出（还是原命名，只是内容多了Q）
+        output_file = f"C:/Users/28027/Desktop/Flow_Field/Reconstruct/Reconstructed_techplot/{projectName}_reconFlowfield_{n_modes}_modes_{j}.dat"
 
-    Reconstruction formula:
-        snapshot_j ~= sum_{i=1}^n sigma_i * phi_i * a_i[j]
-
-    Output files:
-        {projectName}_reconFlowfield_{n}_modes_{j}.npy
-    where j goes from 1 to number of snapshots.
-    """
-
-    if isinstance(projectNames, str):
-        projectNames = [projectNames]
-
-    if n < 1:
-        raise ValueError("n must be at least 1.")
-
-    print("\n====================================================")
-    print("           POD FLOWFIELD RECONSTRUCTION")
-    print("====================================================\n")
-
-    for projectName in projectNames:
-        print(f"--- Working on project: {projectName} ---")
-
-        # -------------------------------------------------
-        # Load singular values
-        # -------------------------------------------------
-        sv_file = f"{projectName}_SV.txt"
-        if not os.path.exists(sv_file):
-            print(f"  ERROR: Missing singular value file: {sv_file}")
-            print("  Skipping this project.\n")
+        if not os.path.exists(velocity_file):
             continue
 
-        S = np.loadtxt(sv_file)
-        S = np.atleast_1d(S).flatten()
+        print(f"Processing: {velocity_file}")
 
-        total_available_modes = len(S)
-        print(f"  Total singular values available: {total_available_modes}")
+        # =========================================================
+        # Read coordinates
+        # =========================================================
+        coords = np.loadtxt(coords_file, delimiter=",")
 
-        if n > total_available_modes:
-            print(f"  WARNING: Requested n = {n}, but only {total_available_modes} modes exist.")
-            print(f"  Using n = {total_available_modes} instead.")
-            n_use = total_available_modes
-        else:
-            n_use = n
+        if coords.ndim != 2 or coords.shape[1] != 3:
+            raise ValueError(
+                f"Coordinate file must have shape (n, 3), but got {coords.shape}"
+            )
 
-        print(f"  Number of modes to reconstruct with: {n_use}")
+        n = coords.shape[0]
 
-        # -------------------------------------------------
-        # Load first mode and first temporal coefficient
-        # to determine sizes
-        # -------------------------------------------------
-        first_mode_file = f"{projectName}_podMode_1.txt"
-        first_temp_file = f"{projectName}_podTempMode_1.txt"
+        # =========================================================
+        # Read velocity
+        # =========================================================
+        vel_raw = np.load(velocity_file)
+        vel_raw = np.asarray(vel_raw).reshape(-1)
 
-        if not os.path.exists(first_mode_file):
-            print(f"  ERROR: Missing spatial mode file: {first_mode_file}")
-            print("  Skipping this project.\n")
-            continue
+        if vel_raw.size != 3 * n:
+            raise ValueError(
+                f"Velocity file length must be 3*n = {3*n}, but got {vel_raw.size}"
+            )
 
-        if not os.path.exists(first_temp_file):
-            print(f"  ERROR: Missing temporal mode file: {first_temp_file}")
-            print("  Skipping this project.\n")
-            continue
+        ux = vel_raw[0:n]
+        uy = vel_raw[n:2*n]
+        uz = vel_raw[2*n:3*n]
 
-        phi1_raw = np.loadtxt(first_mode_file)
-        phi_shape = phi1_raw.shape
-        phi_size = phi1_raw.size
+        # =========================================================
+        # 排序（保证structured grid）
+        # =========================================================
+        sort_idx = np.lexsort((coords[:, 0], coords[:, 1], coords[:, 2]))
 
-        a1 = np.loadtxt(first_temp_file)
-        a1 = np.atleast_1d(a1).flatten()
-        num_snapshots = len(a1)
+        coords = coords[sort_idx]
+        ux = ux[sort_idx]
+        uy = uy[sort_idx]
+        uz = uz[sort_idx]
 
-        print(f"  Spatial mode shape: {phi_shape}")
-        print(f"  Spatial mode total entries: {phi_size}")
-        print(f"  Number of snapshots to reconstruct: {num_snapshots}")
+        # =========================================================
+        # reshape 成 3D grid
+        # =========================================================
+        x_unique = np.unique(coords[:, 0])
+        y_unique = np.unique(coords[:, 1])
+        z_unique = np.unique(coords[:, 2])
 
-        # -------------------------------------------------
-        # Preload modes and temporal coefficients
-        # -------------------------------------------------
-        spatial_modes = []
-        temporal_modes = []
+        nx, ny, nz = len(x_unique), len(y_unique), len(z_unique)
 
-        print("  Loading required POD modes and temporal coefficients...")
+        if nx * ny * nz != n:
+            raise ValueError("Grid is not structured!")
 
-        valid_mode_count = 0
-        for i in range(1, n_use + 1):
-            mode_file = f"{projectName}_podMode_{i}.txt"
-            temp_file = f"{projectName}_podTempMode_{i}.txt"
+        U = ux.reshape((nx, ny, nz), order="F")
+        V = uy.reshape((nx, ny, nz), order="F")
+        W = uz.reshape((nx, ny, nz), order="F")
 
-            if not os.path.exists(mode_file):
-                print(f"  WARNING: Missing spatial mode file: {mode_file}")
-                print(f"           Stopping at mode {i-1}.")
-                break
+        # =========================================================
+        # 计算速度梯度
+        # =========================================================
+        du_dx, du_dy, du_dz = np.gradient(U, x_unique, y_unique, z_unique, edge_order=2)
+        dv_dx, dv_dy, dv_dz = np.gradient(V, x_unique, y_unique, z_unique, edge_order=2)
+        dw_dx, dw_dy, dw_dz = np.gradient(W, x_unique, y_unique, z_unique, edge_order=2)
 
-            if not os.path.exists(temp_file):
-                print(f"  WARNING: Missing temporal mode file: {temp_file}")
-                print(f"           Stopping at mode {i-1}.")
-                break
+        # =========================================================
+        # Q-criterion
+        # =========================================================
+        S11 = du_dx
+        S22 = dv_dy
+        S33 = dw_dz
 
-            phi_i_raw = np.loadtxt(mode_file)
-            a_i = np.loadtxt(temp_file)
+        S12 = 0.5 * (du_dy + dv_dx)
+        S13 = 0.5 * (du_dz + dw_dx)
+        S23 = 0.5 * (dv_dz + dw_dy)
 
-            phi_i = np.asarray(phi_i_raw).reshape(-1)
-            a_i = np.atleast_1d(a_i).flatten()
+        O12 = 0.5 * (du_dy - dv_dx)
+        O13 = 0.5 * (du_dz - dw_dx)
+        O23 = 0.5 * (dv_dz - dw_dy)
 
-            if phi_i.size != phi_size:
-                raise ValueError(
-                    f"Inconsistent size in {mode_file}: "
-                    f"expected {phi_size}, got {phi_i.size}"
-                )
+        S_norm_sq = (
+            S11**2 + S22**2 + S33**2
+            + 2*(S12**2 + S13**2 + S23**2)
+        )
 
-            if len(a_i) != num_snapshots:
-                raise ValueError(
-                    f"Inconsistent number of snapshots in {temp_file}: "
-                    f"expected {num_snapshots}, got {len(a_i)}"
-                )
+        O_norm_sq = 2*(O12**2 + O13**2 + O23**2)
 
-            spatial_modes.append(phi_i)
-            temporal_modes.append(a_i)
-            valid_mode_count += 1
+        Q = 0.5 * (O_norm_sq - S_norm_sq)
 
-            print(f"    Loaded mode {i}")
+        # =========================================================
+        # flatten Q
+        # =========================================================
+        Q_flat = Q.ravel(order="F")
 
-        if valid_mode_count == 0:
-            print("  ERROR: No valid modes were loaded.")
-            print("  Skipping this project.\n")
-            continue
+        # =========================================================
+        # Combine: XYZ + UVW + Q
+        # =========================================================
+        output_data = np.column_stack((coords, ux, uy, uz, Q_flat))
 
-        if valid_mode_count < n_use:
-            print(f"  WARNING: Only {valid_mode_count} modes were successfully loaded.")
-            n_use = valid_mode_count
+        # =========================================================
+        # Write Tecplot
+        # =========================================================
+        with open(output_file, "w") as f:
+            f.write('TITLE = "Vector Field + Q"\n')
+            f.write('VARIABLES = "X" "Y" "Z" "U" "V" "W" "Q"\n')
+            f.write(f'ZONE F=POINT, I=402, J=132, K=132\n')  # 这里你原来的就没动
 
-        spatial_modes = np.array(spatial_modes)      # shape: (n_use, phi_size)
-        temporal_modes = np.array(temporal_modes)    # shape: (n_use, num_snapshots)
-        singular_values = S[:n_use]                  # shape: (n_use,)
+            np.savetxt(f, output_data, fmt="%.10e", delimiter=",")
 
-        print(f"  Final number of modes used: {n_use}")
-        print(f"  spatial_modes array shape: {spatial_modes.shape}")
-        print(f"  temporal_modes array shape: {temporal_modes.shape}")
-        print(f"  singular_values shape: {singular_values.shape}")
-
-        # -------------------------------------------------
-        # Reconstruct each snapshot
-        # -------------------------------------------------
-        print("  Beginning reconstruction of snapshots...")
-
-        for j in range(num_snapshots):
-            coeffs_j = singular_values * temporal_modes[:, j]
-            recon_flat = np.sum(coeffs_j[:, None] * spatial_modes, axis=0)
-            recon_field = recon_flat.reshape(phi_shape)
-
-            out_file = f"{projectName}_reconFlowfield_{n_use}_modes_{j+1}.npy"
-            np.save(out_file, recon_field)
-
-            if (j + 1) == 1 or (j + 1) == num_snapshots or (j + 1) % max(1, num_snapshots // 10) == 0:
-                print(f"    Saved snapshot {j+1}/{num_snapshots} -> {out_file}")
-
-        print(f"  Finished reconstruction for project: {projectName}")
-        print("")
-
-    print("====================================================")
-    print("           RECONSTRUCTION COMPLETE")
-    print("====================================================\n")
-
-
-# ------------------------------------------------------------------
-# Example usage
-# ------------------------------------------------------------------
-if __name__ == "__main__":
-    projectNames = ["case03", "case05", "case075"]
-    n = 5
-    reconstruct_pod_flowfields(projectNames, n)
+        print(f"Done. Tecplot file written to:\n{output_file}")
